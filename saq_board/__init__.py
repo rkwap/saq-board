@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import typing as t
 
-__version__ = "0.1.3"
+__version__ = "0.1.4"
 
 from saq_board.cron import CronJob  # noqa: E402
 from saq_board.worker import track, with_board  # noqa: E402

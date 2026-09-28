@@ -534,12 +534,14 @@ function Overview({ queues, error }) {
 }
 
 function QueueRow({ queue: q }) {
+  // History keeps only the newest completions, so count them from the running total.
+  const counts = { ...q.counts, complete: q.totals.complete }
   return html`<tr>
     <td><div class="queue-name"><${Link} class="name-link" to=${queuePath(q.name)}>${q.name}</${Link}>${q.paused && html`<${PausedBadge} />`}</div></td>
-    <td style="width: 22%"><div class="bar">${STATUSES.map(s => q.counts[s] ? html`<span key=${s} class=${"s-" + s}
-      style=${{ flex: q.counts[s] }} title=${`${LABELS[s]}: ${fmt(q.counts[s])}`} />` : null)}</div></td>
-    ${STATUSES.map(s => html`<td key=${s} class=${cx("num", !q.counts[s] && "zero", s === "failed" && q.counts[s] > 0 && "bad")}>
-      <${Link} to=${queuePath(q.name, "?status=" + s)} style="color: inherit">${fmt(q.counts[s])}</${Link}></td>`)}
+    <td style="width: 22%"><div class="bar">${STATUSES.map(s => counts[s] ? html`<span key=${s} class=${"s-" + s}
+      style=${{ flex: counts[s] }} title=${`${LABELS[s]}: ${fmt(counts[s])}`} />` : null)}</div></td>
+    ${STATUSES.map(s => html`<td key=${s} class=${cx("num", !counts[s] && "zero", s === "failed" && counts[s] > 0 && "bad")}>
+      <${Link} to=${queuePath(q.name, "?status=" + s)} style="color: inherit">${fmt(counts[s])}</${Link}></td>`)}
     <td class="num">${fmt(Object.keys(q.workers).length)}</td>
   </tr>`
 }
