@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "saq-board"
+dynamic = ["version"]
+description = "A bull-board style dashboard for SAQ, with Sidekiq-cron style cron jobs"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md", "saq_board/web/static/fonts/OFL.txt"]
+authors = [{ name = "rkwap" }]
+requires-python = ">=3.9"
+dependencies = ["saq[redis]>=0.24.13", "croniter>=1.0"]
+keywords = ["saq", "queue", "dashboard", "cron", "redis"]
+classifiers = [
+    "Framework :: AsyncIO",
+    "Programming Language :: Python :: 3",
+    "Topic :: System :: Monitoring",
+]
+
+[project.optional-dependencies]
+starlette = ["starlette"]
+web = ["aiohttp", "aiohttp_basicauth"]
+dev = ["saq-board[starlette,web]", "httpx", "pytest", "pytest-asyncio", "pytest-aiohttp", "ruff"]
+
+[project.scripts]
+saq-board = "saq_board.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/rkwap/saq-board"
+
+[tool.hatch.version]
+path = "saq_board/__init__.py"
+
+[tool.hatch.build.targets.sdist]
+include = ["saq_board", "README.md", "LICENSE", "THIRD_PARTY_NOTICES.md"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff]
+line-length = 110
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["UP007", "UP045"]
