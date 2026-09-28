@@ -13,9 +13,9 @@ Apache License, Version 2.0. Copyright 2018 Google Inc. https://github.com/devel
 You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0.
 The file is the unmodified `htm/preact/standalone.module.js` build, with a header comment added.
 
-## Feather icons (paths inlined in `app.js`)
+## Hugeicons free icons (paths inlined in `app.js`)
 
-MIT License. Copyright (c) 2013-2023 Cole Bemis. https://github.com/feathericons/feather
+MIT License. Copyright (c) 2025 Hugeicons. https://github.com/hugeicons/hugeicons-react
 
 ## Geist and Geist Mono (in `fonts/`)
 

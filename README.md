@@ -155,7 +155,7 @@ SAQ Board stands on the shoulders of:
 - [SAQ](https://github.com/tobymao/saq) by [Toby Mao](https://github.com/tobymao) (MIT): the queue this extends, whose dashboard API, structure and `#1095c1` accent it keeps.
 - [bull-board](https://github.com/felixmosh/bull-board) by [felixmosh](https://github.com/felixmosh) (MIT): the dashboard design it follows.
 - [Sidekiq-cron](https://github.com/sidekiq-cron/sidekiq-cron) by [ondrejbartas](https://github.com/ondrejbartas) and contributors (MIT): how cron jobs behave and look.
-- [Preact](https://preactjs.com) (MIT) and [htm](https://github.com/developit/htm) (Apache-2.0) by Jason Miller, [Feather icons](https://feathericons.com) by Cole Bemis (MIT), and the [Geist](https://vercel.com/font) fonts (SIL OFL 1.1), all bundled. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+- [Preact](https://preactjs.com) (MIT) and [htm](https://github.com/developit/htm) (Apache-2.0) by Jason Miller, [Hugeicons](https://hugeicons.com) free icons (MIT), and the [Geist](https://vercel.com/font) fonts (SIL OFL 1.1), all bundled. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## License
 
