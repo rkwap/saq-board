@@ -13,7 +13,7 @@ Inspired by [bull-board](https://github.com/felixmosh/bull-board). It extends SA
 ## Features
 
 - **Queues**: overview with live counts, per-queue tabs for active, queued, scheduled, completed, failed and aborted jobs, plus workers.
-- **Jobs**: bull-board style cards with a timeline, data, result, error and options tabs, progress bars, and retry, abort, run now (promote), duplicate and remove actions.
+- **Jobs**: rows that expand in place to a timeline and data, result, error and options views, with progress bars, and retry, abort, run now (promote), duplicate and remove actions. Each job also has its own page.
 - **Bulk actions**: retry all, clean all, promote all, abort all.
 - **Pause and resume** a queue.
 - **Add jobs** from the dashboard, picking from the functions your workers register.
