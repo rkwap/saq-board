@@ -13,7 +13,7 @@ import json
 import logging
 import typing as t
 
-from saq.job import TERMINAL_STATUSES, Job, Status
+from saq.job import TERMINAL_STATUSES, Job
 from saq.utils import now
 
 from saq_board import cron
@@ -83,6 +83,7 @@ class Board:
         self.queues = {q.name: q for q in queues}
         self.stores = {q.name: Store(track(q, history_limit)) for q in queues}
         self.read_only = read_only
+        self.history_limit = history_limit
 
     def routes(self) -> list[tuple[str, str, Handler]]:
         return [
@@ -151,17 +152,13 @@ class Board:
     async def abort(self, job: Job) -> None:
         if job.status in TERMINAL_STATUSES:
             raise ApiError(400, f"Job {job.key} already finished")
-        active = job.status == Status.ACTIVE
-        await job.abort("aborted from ui")
-        # SAQ finishes a job it took off the queued list, but only marks a
-        # scheduled one "aborting", and no worker will ever pick that up.
-        # Active jobs are finished by their worker.
-        if not active and job.status == Status.ABORTING:
-            await job.finish(Status.ABORTED, error=job.error)
+        store = self.store(job.queue.name)
+        if not await store.abort_job(job, self.history_limit):
+            raise ApiError(409, "Job changed or is being claimed; refresh and try again")
 
     async def retry(self, store: Store, job: Job) -> None:
-        await job.retry("retried from ui")
-        await store.forget(job.key)
+        if not await store.retry_terminal(job):
+            raise ApiError(409, "Only the current terminal execution may be retried")
 
     # ---- queues ----
 

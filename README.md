@@ -1,8 +1,8 @@
 # SAQ Board
 
-A dashboard for [SAQ](https://github.com/tobymao/saq) inspired by [bull-board](https://github.com/felixmosh/bull-board).
+A dashboard to monitor [SAQ](https://github.com/tobymao/saq) queues, manage jobs, and control cron schedules.
 
-It extends SAQ's built-in dashboard and its API is a superset of SAQ's, so it drops in wherever you use `saq.web` today.
+Inspired by [bull-board](https://github.com/felixmosh/bull-board). It extends SAQ's built-in dashboard and its API is a superset of SAQ's, so it drops in wherever you use `saq.web` today.
 
 ![Overview](docs/overview.png)
 
@@ -127,6 +127,15 @@ Everything SAQ's dashboard serves, plus:
 The plugin wraps the worker's queue: `finish` also records the job in a capped history, and `dequeue` waits while the queue is paused (a pause takes effect within a second). It also moves `cron_jobs` to its own scheduler, so SAQ's scheduler doesn't run them too, and tags the worker's metadata so the dashboard can tell whether workers run the plugin.
 
 Board data lives under each queue's SAQ namespace, `saq:<queue>:board:*`, so it goes away with the queue.
+
+## Mutation safety
+
+Retry and abort each run as one Redis script that first checks the job is still what the dashboard showed, so a double click, two open tabs or a busy queue can't corrupt it.
+
+- Retry requeues only a finished job, and only the run you are looking at. If the key now belongs to a newer or running job, or another retry got there first, it returns 409.
+- Abort finishes a queued or scheduled job at once. A running job stays aborting until its worker acknowledges cancellation. Repeated abort requests are idempotent; retry and enqueue with the same key remain blocked during cancellation cleanup.
+- Pending aborts appear in the active tab and persist in `board:aborting`, outside stock SAQ's sweep list. The incomplete entry still prevents duplicate enqueue. If a worker disappears, the request stays pending and visible for operator investigation. A second abort does not prove worker death or force completion; recovery must verify that the old execution has stopped before marking it terminal.
+- While a worker is picking a job up, before it marks it active, abort returns 409. Refresh and try again.
 
 ## Development
 

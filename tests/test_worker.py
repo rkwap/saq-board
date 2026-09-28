@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from saq import Worker
 from saq.job import Status
 
-from saq_board import CronJob, track, with_board
+from saq_board import CronJob, __version__, track, with_board
 from saq_board.cron import Scheduler
 from saq_board.store import Store
 from saq_board.worker import pausable
@@ -98,7 +98,7 @@ async def test_with_board_runs_a_real_worker(queue):
         }
     )
     assert "cron_jobs" not in settings
-    assert settings["metadata"] == {"team": "core", "saq_board": "0.1.0"}
+    assert settings["metadata"] == {"team": "core", "saq_board": __version__}
 
     worker = Worker(**settings)
     task = asyncio.create_task(worker.start())
@@ -121,6 +121,95 @@ async def test_with_board_runs_a_real_worker(queue):
     finally:
         await worker.stop()
         task.cancel()
+
+
+async def sleepy(ctx):
+    await asyncio.sleep(30)
+
+
+async def test_worker_finishes_a_ui_abort(queue):
+    worker = Worker(**with_board({"queue": queue, "functions": [sleepy]}))
+    task = asyncio.create_task(worker.start())
+    try:
+        job = await queue.enqueue("sleepy", retries=3)
+        while (await queue.job(job.key)).status != Status.ACTIVE:
+            await asyncio.sleep(0.05)
+        store = Store(queue)
+        assert await store.abort_job(await queue.job(job.key), 1000)
+        await job.refresh(until_complete=5)
+        assert job.status == Status.ABORTED and job.error == "aborted from ui"
+        assert (await store.history("aborted", 0, 10))[1] == 1
+        assert await queue.count("active") == 0 and await queue.count("queued") == 0
+    finally:
+        await worker.stop()
+        task.cancel()
+
+
+async def test_repeated_abort_cannot_retry_until_worker_acknowledges(queue):
+    entered, cancelling, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    executions = 0
+
+    async def slow_cancel(ctx):
+        nonlocal executions
+        executions += 1
+        if executions == 1:
+            entered.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelling.set()
+                await release.wait()
+                raise
+
+    worker = Worker(**with_board({
+        "queue": queue, "functions": [slow_cancel], "concurrency": 2,
+        "timers": {"abort": 60},
+    }))
+    runner = asyncio.create_task(worker.start())
+    abort = None
+    try:
+        job = await queue.enqueue(slow_cancel.__qualname__, key="same-key")
+        await asyncio.wait_for(entered.wait(), 5)
+        store = Store(queue)
+        assert await store.abort_job(await queue.job(job.key), 1000)
+        abort = asyncio.create_task(worker.abort(0))
+        await asyncio.wait_for(cancelling.wait(), 5)
+        # The worker is alive and performing cancellation cleanup.
+        assert await store.abort_job(await queue.job(job.key), 1000)
+        pending = await queue.job(job.key)
+        assert pending.status == Status.ABORTING
+        assert not await store.retry_terminal(pending)
+        assert await queue.enqueue(slow_cancel.__qualname__, key=job.key) is None
+        assert executions == 1
+        assert (await store.summary())["counts"]["active"] == 1
+        release.set()
+        await asyncio.wait_for(abort, 5)
+        await job.refresh(until_complete=5)
+        assert job.status == Status.ABORTED
+        assert await queue.count("incomplete") == 0
+        assert await store.redis.zcard(store.key("aborting")) == 0
+        assert await store.retry_terminal(job)
+        await job.refresh(until_complete=5)
+        assert job.status == Status.COMPLETE and executions == 2
+    finally:
+        release.set()
+        if abort:
+            await asyncio.gather(abort, return_exceptions=True)
+        await worker.stop()
+        await runner
+
+
+async def test_abort_ack_clears_pending_even_when_history_is_disabled(queue):
+    track(queue)
+    job = await queue.enqueue("noop", key="no-history", ttl=-1)
+    job = await queue.dequeue(timeout=1)
+    await job.update(status=Status.ACTIVE)
+    store = Store(queue)
+    assert await store.abort_job(job, 1000)
+    await job.finish(Status.ABORTED)
+    assert await queue.job(job.key) is None
+    assert await store.redis.zcard(store.key("aborting")) == 0
+    assert (await store.history("aborted", 0, 10))[1] == 0
 
 
 def scheduler(queue, *crons, **kwargs):

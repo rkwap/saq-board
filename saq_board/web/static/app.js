@@ -454,7 +454,7 @@ function JobCard({ job, standalone, onDuplicate, onRemoved }) {
   const actions = READ_ONLY ? [] : [
     status === "scheduled" && html`<${Button} key="promote" small kind="ghost" icon="promote" title="Run now" onClick=${() => run("promote", "Job promoted")} />`,
     FINISHED.includes(status) && html`<${Button} key="retry" small kind="ghost" icon="retry" title="Retry" onClick=${() => run("retry", "Job retried")} />`,
-    ["queued", "scheduled", "active"].includes(status) && html`<${Button} key="abort" small kind="ghost danger" icon="abort" title="Abort"
+    ["queued", "scheduled", "active", "aborting"].includes(status) && html`<${Button} key="abort" small kind="ghost danger" icon="abort" title="Abort"
       onClick=${() => run("abort", "Abort requested", `Abort job ${job.key}?`)} />`,
     onDuplicate && html`<${Button} key="dup" small kind="ghost" icon="copy" title="Duplicate" onClick=${() => onDuplicate(job)} />`,
     FINISHED.includes(status) && html`<${Button} key="remove" small kind="ghost danger" icon="trash" title="Remove"

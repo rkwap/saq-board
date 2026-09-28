@@ -1,3 +1,4 @@
+import asyncio
 import time
 
 import httpx
@@ -219,3 +220,103 @@ async def test_aiohttp_slashes_in_job_keys(aiohttp_client, queue):
     assert (await (await client.get(path)).json())["job"]["key"] == "team/a b?"
     assert (await client.post(path + "/abort")).status == 200
     assert (await client.get("/queues/test/jobs/team%2Fa%20b%3F")).status == 200
+
+
+async def test_retry_all_skips_history_for_reused_active_key(client, queue):
+    await queue.enqueue("add", key="reused")
+    await finish_next(queue, Status.FAILED, error="old failure")
+    await queue.enqueue("add", key="reused")
+    running = await queue.dequeue(timeout=1)
+    await running.update(status=Status.ACTIVE)
+    response = await client.post("/api/queues/test/retry-all", json={"status": "failed"})
+    assert response.json() == {"count": 0}
+    assert (await queue.job("reused")).status == Status.ACTIVE
+    assert await queue.count("active") == 1
+    assert await queue.count("queued") == 0
+    assert (await client.post("/api/queues/test/jobs/reused/retry")).status_code == 409
+
+
+async def test_concurrent_retries_claim_terminal_job_once(client, queue):
+    await queue.enqueue("add", key="once")
+    await finish_next(queue, Status.FAILED, error="failure")
+    responses = await asyncio.gather(*(
+        client.post("/api/queues/test/jobs/once/retry") for _ in range(8)
+    ))
+    assert sum(r.status_code == 200 for r in responses) == 1
+    assert all(r.status_code in (200, 409) for r in responses)
+    assert await queue.count("queued") == 1
+
+
+async def test_abort_handoff_preserves_recovery_indexes(client, queue):
+    await queue.enqueue("add", key="handoff")
+    job = await queue.dequeue(timeout=1)
+    assert job.status == Status.QUEUED  # Claimed, but worker hasn't written ACTIVE yet.
+    response = await client.post("/api/queues/test/jobs/handoff/abort")
+    assert response.status_code == 409
+    assert await queue.count("active") == 1
+    assert await queue.count("incomplete") == 1
+    assert (await queue.job(job.key)).status == Status.QUEUED
+    await job.update(status=Status.ACTIVE)
+    assert (await client.post("/api/queues/test/jobs/handoff/abort")).status_code == 200
+    assert (await queue.job(job.key)).status == Status.ABORTING
+    assert await queue.count("active") == 0
+    assert await queue.count("incomplete") == 1
+    assert (await Store(queue).history("aborted", 0, 10))[1] == 0
+    await job.finish(Status.ABORTED, error="worker acknowledged")
+    assert (await Store(queue).history("aborted", 0, 10))[1] == 1
+
+
+async def claim(queue, key, **kwargs):
+    await queue.enqueue("add", key=key, **kwargs)
+    job = await queue.dequeue(timeout=1)
+    job.attempts = 1
+    await job.update(status=Status.ACTIVE)
+    return job
+
+
+async def test_sweep_does_not_requeue_a_ui_aborted_job(client, queue):
+    await claim(queue, "retryable", retries=3)
+    assert (await client.post("/api/queues/test/jobs/retryable/abort")).status_code == 200
+    await queue.sweep(abort=0.1)
+    assert (await queue.job("retryable")).status == Status.ABORTING
+    assert await queue.count("queued") == 0
+
+
+async def test_repeated_abort_keeps_orphan_pending_and_visible(client, queue):
+    job = await claim(queue, "orphan")
+    assert (await client.post("/api/queues/test/jobs/orphan/abort")).status_code == 200
+    assert (await client.post("/api/queues/test/jobs/orphan/abort")).status_code == 200
+    assert (await queue.job("orphan")).status == Status.ABORTING
+    store = Store(queue)
+    assert (await store.history("aborted", 0, 10))[1] == 0
+    assert (await store.summary())["counts"]["active"] == 1
+    jobs = (await client.get("/api/queues/test/jobs?status=active")).json()
+    assert jobs["total"] == 1 and jobs["jobs"][0]["key"] == "orphan"
+    assert (await client.post("/api/queues/test/jobs/orphan/retry")).status_code == 409
+    # Dedupe persists after SAQ's short-lived abort signal expires.
+    await queue.redis.delete(job.abort_id)
+    assert await queue.enqueue("add", key="orphan") is None
+    assert await queue.redis.ttl(store.key("aborting")) == -1
+
+
+async def test_bulk_actions_while_workers_claim_other_jobs(client, queue):
+    for i in range(50):
+        await queue.enqueue("add", key=f"b{i}")
+    stop = asyncio.Event()
+
+    async def churn_active_list():
+        while not stop.is_set():
+            await queue.redis.rpush(queue.namespace("active"), "other")
+            await queue.redis.lpop(queue.namespace("active"))
+
+    churn = asyncio.create_task(churn_active_list())
+    try:
+        aborted = await client.post("/api/queues/test/abort-all", json={"status": "queued"})
+        assert aborted.json() == {"count": 50}
+        retried = await asyncio.wait_for(
+            client.post("/api/queues/test/retry-all", json={"status": "aborted"}), 10
+        )
+        assert retried.json() == {"count": 50}
+    finally:
+        stop.set()
+        await churn
